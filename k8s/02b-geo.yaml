@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geo
+  namespace: pmc-water-tracker
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: geo }
+  template:
+    metadata:
+      labels: { app: geo }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: geo
+          image: ghcr.io/OWNER/REPO-geo:latest # Rust service (built from ./rust-geo); replace OWNER/REPO
+          ports:
+            - containerPort: 8090
+          env:
+            - name: GO_API_URL          # the MCP tools call the Go API's public GET endpoints
+              value: http://backend:8080
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests: { cpu: "50m", memory: "16Mi" }
+            limits: { cpu: "500m", memory: "128Mi" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8090 }
+            initialDelaySeconds: 1
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8090 }
+            initialDelaySeconds: 3
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: geo
+  namespace: pmc-water-tracker
+spec:
+  selector: { app: geo }
+  ports:
+    - port: 8090
+      targetPort: 8090

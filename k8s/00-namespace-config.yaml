@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pmc-water-tracker
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: pmc-water-tracker
+data:
+  SPRING_PROFILES_ACTIVE: "prod"
+  DB_HOST: "your-aiven-host.aivencloud.com"
+  DB_PORT: "12345"
+  DB_NAME: "defaultdb"
+  ADMIN_USERNAME: "admin"
+  OLLAMA_ENABLED: "false"
+  OLLAMA_HOST: "http://localhost:11434"
+  OLLAMA_MODEL: "llama3.2"
+  RABBITMQ_ENABLED: "false"
+  JWT_EXPIRATION_MS: "43200000"
+  MDC_HEADERS: ""
+  GEO_URL: "http://geo:8090"          # the Rust geo service (see 02b-geo.yaml)
+  TRUST_PROXY: "true"                  # behind the Gateway: use X-Forwarded-For for login rate limiting
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_SSL_ENABLED: "false"

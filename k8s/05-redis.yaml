@@ -1,0 +1,44 @@
+# A single, unclustered Redis instance -- genuinely sufficient for this project's actual
+# load (small rate-limit counters and one toggle flag, not a general-purpose cache under real
+# throughput). If Redis itself becomes a bigger dependency later, a managed Redis service
+# (same category of tradeoff as Aiven-managed-MySQL vs self-hosting) would be the upgrade path.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: pmc-water-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: pmc-water-tracker
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379

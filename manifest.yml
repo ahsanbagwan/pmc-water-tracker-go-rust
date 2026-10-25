@@ -1,0 +1,17 @@
+---
+applications:
+  - name: pmc-water-tracker
+    memory: 512M
+    instances: 1
+    path: backend/target/pmc-water-tracker-0.1.0.jar
+    buildpacks:
+      - java_buildpack
+    env:
+      JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 21.+ } }'
+      SPRING_PROFILES_ACTIVE: prod
+    # DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD, ADMIN_USERNAME, ADMIN_PASSWORD,
+    # JWT_PRIVATE_KEY_B64, JWT_PUBLIC_KEY_B64, etc. -- same env vars the app already reads via
+    # ${VAR:default} in application.properties (see application-prod.properties). Set these as
+    # real CF environment variables (`cf set-env`, or a per-space vars_file) rather than
+    # committing them here -- exactly the same secret-handling principle as Render's dashboard
+    # env vars, just CF's version of it.

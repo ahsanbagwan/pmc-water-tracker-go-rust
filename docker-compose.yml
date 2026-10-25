@@ -1,0 +1,31 @@
+# Local full stack: MySQL + Redis + Rust geo service + Go API.   docker compose up --build
+# (Not executed in the authoring sandbox - first run may need small tweaks.)
+services:
+  mysql:
+    image: mysql:8.4
+    environment: { MYSQL_ROOT_PASSWORD: root, MYSQL_DATABASE: pmc }
+    healthcheck: { test: ["CMD", "mysqladmin", "ping", "-proot"], interval: 5s, retries: 20 }
+  redis:
+    image: redis:7-alpine
+  geo:
+    build: ./rust-geo
+    environment:
+      PORT: "8090"
+      GO_API_URL: http://api:8080
+      WARD_GEOJSON: /data/pune-admin-wards.geojson
+    volumes: ["./data:/data:ro"]   # put pune-admin-wards.geojson in ./data (optional)
+  api:
+    build: ./go-api
+    depends_on: { mysql: { condition: service_healthy }, redis: { condition: service_started }, geo: { condition: service_started } }
+    ports: ["8080:8080"]
+    environment:
+      SPRING_PROFILES_ACTIVE: prod         # the same env var names the Spring app used
+      ADMIN_PASSWORD: change-me-locally-1
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: pmc
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      REDIS_HOST: redis
+      GEO_URL: http://geo:8090
+      # JWT_PRIVATE_KEY_B64 / JWT_PUBLIC_KEY_B64 are REQUIRED in prod mode - see README

@@ -1,0 +1,141 @@
+name: Build, push, and deploy to Kubernetes
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # also allows manually triggering a deploy without a new push
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ${{ github.repository }}-backend
+  GEO_IMAGE: ${{ github.repository }}-geo
+  FRONTEND_IMAGE: ${{ github.repository }}-frontend
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # needed to push to GHCR
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} # built-in, no separate secret needed for GHCR
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./go-api
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+
+  build-geo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Rust geo image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rust-geo
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.GEO_IMAGE }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.GEO_IMAGE }}:latest
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          build-args: |
+            VITE_API_BASE=${{ secrets.VITE_API_BASE }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:latest
+
+  deploy:
+    needs: [build-backend, build-geo, build-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure cluster access
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+        # KUBE_CONFIG is your cluster's kubeconfig file, base64-encoded, stored as a GitHub
+        # secret -- generate it with: cat ~/.kube/config | base64 -w 0
+        # This is genuinely sensitive: it's full cluster access, not scoped to just this app --
+        # same "never hardcode, use a secret store" principle as every other credential in this
+        # project, just GitHub's own secret store instead of Vault this time.
+
+      - name: Apply cluster manifests
+        run: |
+          # Deliberately EXCLUDES 01-secret-template.yaml -- that file has literal REPLACE_ME
+          # placeholder values and must never be applied directly. Real secrets go in via
+          # Vault/External Secrets Operator (see that file's own comments) or a one-time
+          # manual `kubectl apply` you run yourself, outside this automated workflow.
+          #
+          # Also assumes cluster-level prerequisites are ALREADY installed (Gateway API CRDs,
+          # Envoy Gateway or HAProxy's controller, cert-manager) -- this workflow deploys the
+          # APP, it doesn't provision the cluster itself. Same "platform team's one-time setup,
+          # not the app's per-deploy concern" distinction as the BOSH/CF conversation earlier.
+          for f in k8s/*.yaml; do
+            if [ "$f" != "k8s/01-secret-template.yaml" ]; then
+              kubectl apply -f "$f"
+            fi
+          done
+
+      - name: Point deployments at the freshly-built images
+        run: |
+          kubectl set image deployment/backend \
+            backend=${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+            -n pmc-water-tracker
+
+          kubectl set image deployment/geo \
+            geo=${{ env.REGISTRY }}/${{ env.GEO_IMAGE }}:${{ github.sha }} \
+            -n pmc-water-tracker
+
+          kubectl set image deployment/frontend \
+            frontend=${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
+            -n pmc-water-tracker
+
+      - name: Wait for rollout to actually succeed
+        run: |
+          kubectl rollout status deployment/backend -n pmc-water-tracker --timeout=180s
+          kubectl rollout status deployment/geo -n pmc-water-tracker --timeout=180s
+          kubectl rollout status deployment/frontend -n pmc-water-tracker --timeout=180s

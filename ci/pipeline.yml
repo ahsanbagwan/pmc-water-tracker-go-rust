@@ -1,0 +1,102 @@
+---
+# fly -t <your-target> set-pipeline -p pmc-water-tracker -c ci/pipeline.yml -l ci/credentials.yml
+# credentials.yml is never committed -- see the (( )) vars below, all sourced from it or
+# Concourse's own credential manager (Vault/CredHub) if your Concourse is wired to one.
+
+resource_types:
+  - name: cf-cli-resource
+    type: docker-image
+    source:
+      repository: nulldriver/cf-cli-resource
+      tag: latest
+
+resources:
+  - name: pmc-water-tracker-repo
+    type: git
+    source:
+      uri: https://github.com/((github-org))/pmc-water-tracker.git
+      branch: develop
+      # GitHub requires a PAT here, not an account password -- password-based git auth was
+      # deprecated years ago. The username value is mostly a formality once a PAT is in use;
+      # your actual GitHub username still works, or x-access-token is a common convention.
+      username: ((github-username))
+      password: ((github-pat))
+
+  - name: cf-target
+    type: cf-cli-resource
+    source:
+      api: ((cf-api-endpoint))
+      username: ((cf-username))
+      password: ((cf-password))
+      org: ((cf-org))
+      space: ((cf-space))
+      # Common on internal/self-hosted CF foundations (including OpenStack-hosted ones) using
+      # an internal CA rather than a public one -- flip to false if yours uses a publicly
+      # trusted cert.
+      skip_cert_check: ((cf-skip-cert-check))
+
+jobs:
+  - name: build-and-deploy
+    plan:
+      - get: pmc-water-tracker-repo
+        trigger: true
+
+      - task: maven-build
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source: { repository: maven, tag: 3.9-eclipse-temurin-21 }
+          inputs:
+            - name: pmc-water-tracker-repo
+          outputs:
+            # Same directory the input came in under -- the built JAR lands inside it, so the
+            # cf-cli-resource put step below can find it at a predictable path without needing
+            # a separate resource to move it between steps.
+            - name: pmc-water-tracker-repo
+          params:
+            # Concourse injects these as real env vars inside the task container -- resolved
+            # from Vault (or credentials.yml) exactly the same ((var)) mechanism as GitHub/CF
+            # above, just consumed differently: here, by a settings.xml this task writes
+            # itself, not by a resource's source block.
+            ARTIFACTORY_URL: ((artifactory-url))
+            ARTIFACTORY_USERNAME: ((artifactory-username))
+            ARTIFACTORY_TOKEN: ((artifactory-token))
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                # Generate a Maven settings.xml pointing dependency resolution through
+                # Artifactory's mirror, rather than Maven Central directly -- common in
+                # enterprise environments for provenance/caching/compliance reasons. The
+                # <mirrorOf>*</mirrorOf> means ALL dependency lookups go through this one
+                # mirror, not just some.
+                cat > settings.xml <<XML
+                <settings>
+                  <servers>
+                    <server>
+                      <id>artifactory</id>
+                      <username>${ARTIFACTORY_USERNAME}</username>
+                      <password>${ARTIFACTORY_TOKEN}</password>
+                    </server>
+                  </servers>
+                  <mirrors>
+                    <mirror>
+                      <id>artifactory</id>
+                      <mirrorOf>*</mirrorOf>
+                      <url>${ARTIFACTORY_URL}/maven-remote</url>
+                    </mirror>
+                  </mirrors>
+                </settings>
+                XML
+
+                cd pmc-water-tracker-repo/backend
+                mvn -B --settings ../../settings.xml clean package
+
+      - put: cf-target
+        params:
+          command: zero-downtime-push
+          manifest: pmc-water-tracker-repo/manifest.yml
+          path: pmc-water-tracker-repo/backend/target/pmc-water-tracker-0.1.0.jar
+          current_app_name: pmc-water-tracker

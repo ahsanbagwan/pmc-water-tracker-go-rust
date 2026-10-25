@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="lokiUrl" source="LOKI_URL" defaultValue=""/>
+    <springProperty scope="context" name="lokiUsername" source="LOKI_USERNAME" defaultValue=""/>
+    <springProperty scope="context" name="lokiPassword" source="LOKI_PASSWORD" defaultValue=""/>
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="pmc-water-tracker"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <!-- Same as Spring Boot's default pattern, with %X{correlationId} inserted --
+                 that's Logback's syntax for reading a value out of MDC. Falls back to "-" for
+                 any log line outside a request (e.g. startup logs), where no correlation ID
+                 has been set. -->
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} ${LOG_LEVEL_PATTERN:-%5p} [%X{correlationId:--}] ${PID:- } --- [%15.15t] %-40.40logger{39} : %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Only defined/attached when LOKI_URL is actually set -- with no URL configured,
+         logging behaves exactly as it did before (console only). -->
+    <if condition='!"".equals(property("lokiUrl"))'>
+        <then>
+            <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+                <http>
+                    <url>${lokiUrl}</url>
+                    <!-- Grafana Cloud's Loki push endpoint requires Basic auth: instance ID as
+                         username, an API token as password. Not independently verified against
+                         Loki4j's exact current auth XML schema (unlike the dependency/appender
+                         itself, which is confirmed against Loki4j's own docs) -- if this specific
+                         block doesn't work, check https://loki4j.github.io/loki-logback-appender/
+                         for the current <http><auth> syntax. -->
+                    <auth>
+                        <username>${lokiUsername}</username>
+                        <password>${lokiPassword}</password>
+                    </auth>
+                </http>
+                <format>
+                    <label>
+                        <pattern>app=${appName}</pattern>
+                    </label>
+                </format>
+            </appender>
+        </then>
+    </if>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <if condition='!"".equals(property("lokiUrl"))'>
+            <then>
+                <appender-ref ref="LOKI"/>
+            </then>
+        </if>
+    </root>
+</configuration>

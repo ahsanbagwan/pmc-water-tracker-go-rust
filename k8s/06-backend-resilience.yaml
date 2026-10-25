@@ -1,0 +1,45 @@
+# HONESTY FLAG: unlike 04-gateway.yaml's core Gateway API resources (GatewayClass/Gateway/
+# HTTPRoute -- stable, GA, confirmed against current sources), this file uses an
+# Envoy-Gateway-SPECIFIC extension CRD (BackendTrafficPolicy). I have NOT independently
+# verified this exact field structure against Envoy Gateway's current docs this pass -- check
+# it there before relying on this in production, same caution as anything else in this
+# project flagged this way (the MCP SDK integration is the reference example of what happens
+# when this kind of thing goes unverified).
+#
+# THE ACTUAL VALUE, if the fields below are correct: your backend Deployment runs
+# replicas: 2. If one pod becomes slow or unhealthy (not fully down, just degraded -- the
+# harder case for a liveness probe to catch quickly), Envoy can automatically detect that via
+# outlier detection and temporarily stop routing to it, while retrying failed requests against
+# the OTHER healthy replica instead. nginx-ingress can approximate some of this via
+# annotations, but nowhere near as precisely or observably as Envoy's native traffic policies.
+
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: backend-resilience
+  namespace: pmc-water-tracker
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: backend-route
+  retry:
+    numRetries: 2
+    perRetry:
+      timeout: 2s
+    retryOn:
+      httpStatusCodes: [502, 503, 504]
+  healthCheck:
+    active:
+      type: HTTP
+      http:
+        path: /healthz  # the Go API serves both /healthz and /actuator/health
+      interval: 10s
+      unhealthyThreshold: 3
+      healthyThreshold: 2
+
+---
+# SSE (/api/stream/localities) holds a connection open for minutes/hours. Envoy's default request
+# timeout would cut it. NOT verified field-by-field against Envoy Gateway's current docs - check
+# `ClientTrafficPolicy`/`BackendTrafficPolicy` timeout fields there (the API is alpha). The Go
+# server already sends a ': ping' comment every 20s so idle-timeout based gateways keep it open.

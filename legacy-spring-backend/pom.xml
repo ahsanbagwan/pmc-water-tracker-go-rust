@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.4</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>org.punewatertracker</groupId>
+    <artifactId>pmc-water-tracker</artifactId>
+    <version>0.1.0</version>
+    <name>pmc-water-tracker</name>
+    <description>API tracking PMC (Pune) locality-level municipal water / tanker-dependency / pipeline-work status</description>
+
+    <properties>
+        <java.version>21</java.version>
+
+        <!-- SonarQube Cloud config -- read by sonar-maven-plugin (see the GitHub Actions
+             workflow, which runs `mvn verify sonar:sonar`). Replace both placeholder values
+             with your actual org/project keys from sonarcloud.io before this does anything
+             useful. jacoco.xmlReportPaths points at the report jacoco-maven-plugin generates
+             below, from `mvn test`. -->
+        <sonar.organization>REPLACE_WITH_YOUR_ORG_KEY</sonar.organization>
+        <sonar.projectKey>REPLACE_WITH_YOUR_PROJECT_KEY</sonar.projectKey>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+    </properties>
+
+    <dependencies>
+        <!-- Moves @ComponentScan's work from RUNTIME reflection to COMPILE TIME: generates
+             META-INF/spring.components listing every Spring-managed class explicitly, so
+             startup reads a list instead of scanning and reflecting over the whole classpath.
+             optional=true -- this is purely a build-time annotation processor, never actually
+             needed on the runtime classpath itself. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context-indexer</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Redis: shared state across pods for rate limiting and the Ollama feature toggle --
+             replaces the per-instance-only ConcurrentHashMap/AtomicBoolean that were correct
+             on a single Render instance but silently wrong once running multiple K8s replicas. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- ShedLock: distributed locking so @Scheduled jobs run once across the whole
+             cluster, not once PER POD. JDBC provider reuses the existing MySQL datasource --
+             no new infrastructure needed for this one specifically. -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>5.16.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>5.16.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
+        <!-- Observability: metrics + tracing exported via OTLP -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <!-- Ships logs to Grafana Loki (same free Grafana Cloud account as the OTel traces/
+             metrics setup, if you already have one). Only active when LOKI_URL is set --
+             see logback-spring.xml. -->
+        <dependency>
+            <groupId>com.github.loki4j</groupId>
+            <artifactId>loki-logback-appender</artifactId>
+            <version>2.0.3</version>
+        </dependency>
+        <!-- Needed for the <if> conditional in logback-spring.xml (only ship to Loki when
+             LOKI_URL is actually set) -- same pattern used elsewhere in this project. -->
+        <dependency>
+            <groupId>org.codehaus.janino</groupId>
+            <artifactId>janino</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- MCP: exposes read-only locality data as tools any MCP-compatible AI assistant can
+             call. Core SDK only (io.modelcontextprotocol.sdk:mcp) -- NOT the Spring-specific
+             mcp-spring-webflux/mcp-spring-webmvc artifacts, which moved under Spring AI 2.0 and
+             require Spring Boot 4. This uses the core SDK's servlet-based HTTP transport
+             instead, which plugs into the Tomcat/Servlet container spring-boot-starter-web
+             already provides -- no Spring Boot version change needed.
+             Version pinned deliberately (not "latest") -- this SDK's API has moved multiple
+             times recently; if this exact version doesn't resolve, check
+             https://github.com/modelcontextprotocol/java-sdk for the current release. -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+            <version>0.15.0</version>
+        </dependency>
+
+        <!-- Chaos engineering: only ever active under the chaos-monkey profile -- see
+             application-chaos-monkey.properties and the README's safety notes. -->
+        <dependency>
+            <groupId>de.codecentric</groupId>
+            <artifactId>chaos-monkey-spring-boot</artifactId>
+            <version>3.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-otlp</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Dev/default database: file-based H2, zero setup required -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Prod database driver: Aiven's free MySQL plan -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Tests the REAL HTTP layer -- routing, Security's filter chain, JSON serialization,
+             ApiExceptionHandler -- end to end, against a genuinely running embedded server.
+             Not verified against Maven Central's exact current release this pass; if this
+             version doesn't resolve, check https://mvnrepository.com/artifact/io.rest-assured/rest-assured -->
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <version>5.5.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>rabbitmq</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!-- Coverage: instruments test execution (prepare-agent), then generates an XML
+                 report after `mvn test` (bound to the test phase) -- that XML is what
+                 sonar-project.properties points Sonar at below. Version pinned rather than
+                 left to a parent BOM, since jacoco-maven-plugin isn't managed by
+                 spring-boot-starter-parent. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

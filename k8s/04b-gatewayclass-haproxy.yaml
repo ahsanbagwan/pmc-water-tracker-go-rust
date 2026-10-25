@@ -1,0 +1,27 @@
+# This file is an ALTERNATIVE to 04-gateway.yaml's GatewayClass -- use one or the other, not
+# both, depending on which data plane you want fronting the cluster. The Gateway and HTTPRoute
+# resources in 04-gateway.yaml are UNCHANGED either way -- that portability (swap the
+# controller, keep every route definition identical) is Gateway API's actual point, not just a
+# marketing claim. Confirmed against HAProxy's own official docs and Helm chart README --
+# controllerName below is the real, correct value, not a guess.
+#
+# PREREQUISITE (cluster-level, one-time):
+#   helm repo add haproxytech https://haproxytech.github.io/helm-charts
+#   helm repo update
+#   helm install my-ingress haproxytech/kubernetes-ingress \
+#     --set controller.kubernetesGateway.enabled=true \
+#     --set controller.kubernetesGateway.gatewayControllerName=haproxy.org/gateway-controller
+#
+# HONEST NOTE: HAProxy also has a NEWER, purpose-built Gateway-API-native project called
+# "HAProxy Unified Gateway" (haproxytech/haproxy-unified-gateway), positioned as the more
+# modern path the same way Envoy Gateway is for Envoy. I could not confirm its exact
+# controllerName value from what I found this pass -- the classic "kubernetes-ingress" chart
+# with Gateway API mode enabled (used below) is the one I have direct, confirmed evidence for.
+# Worth checking HUG's current docs directly if you want the newer path instead.
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: haproxy
+spec:
+  controllerName: haproxy.org/gateway-controller

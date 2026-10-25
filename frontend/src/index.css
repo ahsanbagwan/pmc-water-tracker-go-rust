@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+:root {
+  /* --- Palette: pale water-glass ground, ink text, status colors doing the real work --- */
+  --color-bg: #eef4f3;
+  --color-surface: #ffffff;
+  --color-ink: #142826;
+  --color-ink-soft: #4a5c5a;
+  --color-line: #d6e2e0;
+  --color-header: #0f3d3e;
+  --color-header-ink: #eaf3f1;
+
+  --color-municipal: #1d7a8c;
+  --color-municipal-bg: #e2f0f2;
+  --color-tanker: #b5541f;
+  --color-tanker-bg: #f7e8de;
+  --color-mixed: #b98a1f;
+  --color-mixed-bg: #f6ecd6;
+  --color-progress: #6b4e9e;
+  --color-progress-bg: #ebe4f5;
+
+  --font-display: 'Zilla Slab', Georgia, serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-municipal);
+}
+
+button {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-progress);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Leaflet renders CircleMarker as a real SVG <circle> with class "leaflet-interactive" --
+   this makes radius/fill-opacity changes (e.g. on selection) animate smoothly instead of
+   snapping instantly. Already covered by the reduced-motion rule above via transition-duration. */
+.leaflet-interactive {
+  transition: r 200ms ease, fill-opacity 200ms ease, stroke-width 200ms ease;
+}

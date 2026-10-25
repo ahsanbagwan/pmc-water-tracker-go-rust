@@ -1,0 +1,88 @@
+.ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ledger-empty {
+  padding: 2rem 0;
+  color: var(--color-ink-soft);
+  font-style: italic;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr auto;
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.9rem 0.25rem;
+  border-bottom: 1px solid var(--color-line);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.ledger-row:hover {
+  background: rgba(29, 122, 140, 0.05);
+}
+
+.ledger-row.is-selected {
+  background: rgba(29, 122, 140, 0.09);
+}
+
+.ledger-index {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-ink-soft);
+  padding-top: 0.2rem;
+}
+
+.ledger-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ledger-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.ledger-ward {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--color-ink-soft);
+  text-transform: uppercase;
+}
+
+.ledger-notes {
+  margin: 0.3rem 0 0.35rem;
+  color: var(--color-ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.ledger-meta {
+  font-size: 0.78rem;
+  color: var(--color-ink-soft);
+}
+
+.ledger-meta a {
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-municipal);
+}
+
+.ledger-stamp {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1.5px dashed;
+  border-radius: 4px;
+  padding: 0.28rem 0.55rem;
+  white-space: nowrap;
+  transform: rotate(-1.5deg);
+}

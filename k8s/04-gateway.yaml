@@ -1,0 +1,85 @@
+# PREREQUISITE (one-time, cluster-level, not covered by this file):
+#   1. Install the Gateway API CRDs + Envoy Gateway itself via its Helm chart -- this is the
+#      controller/data-plane, analogous to how nginx-ingress-controller itself had to be
+#      installed before any Ingress resource using it would do anything.
+#   2. cert-manager still handles TLS the same way it did before -- Gateway API has its own
+#      integration point (a certificateRefs field on the Gateway's listener, referencing a
+#      Secret cert-manager populates), replacing the old cert-manager.io/cluster-issuer
+#      annotation with a proper structured field instead.
+#
+# WHY THIS FILE EXISTS: ingress-nginx (the controller behind the OLD 04-ingress.yaml this
+# replaces) goes end-of-maintenance March 2026 -- no further security fixes. This is not
+# optional cleanup; it's a required migration. See k8s/README.md for the full context.
+#
+# HONEST NOTE: this is Gateway API's stable, CORE resource model (GA since Kubernetes 1.30) --
+# confirmed against current sources. Envoy-Gateway-SPECIFIC extension CRDs (BackendTrafficPolicy
+# for retries/circuit-breaking, ClientTrafficPolicy for rate limiting, etc. -- see the bottom of
+# this file) are NOT independently re-verified field-by-field this pass; check those against
+# Envoy Gateway's own current docs before relying on them in production.
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: envoy-gateway
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: pmc-water-tracker-gateway
+  namespace: pmc-water-tracker
+spec:
+  gatewayClassName: envoy-gateway
+  listeners:
+    - name: water-https
+      protocol: HTTPS
+      port: 443
+      hostname: water.yourdomain.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: pmc-water-tracker-frontend-tls  # a Secret cert-manager populates, same as before
+    - name: api-https
+      protocol: HTTPS
+      port: 443
+      hostname: api-water.yourdomain.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: pmc-water-tracker-backend-tls
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: frontend-route
+  namespace: pmc-water-tracker
+spec:
+  parentRefs:
+    - name: pmc-water-tracker-gateway
+      sectionName: water-https
+  hostnames:
+    - water.yourdomain.com
+  rules:
+    - backendRefs:
+        - name: frontend
+          port: 80
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backend-route
+  namespace: pmc-water-tracker
+spec:
+  parentRefs:
+    - name: pmc-water-tracker-gateway
+      sectionName: api-https
+  hostnames:
+    - api-water.yourdomain.com
+  rules:
+    - backendRefs:
+        - name: backend
+          port: 8080
