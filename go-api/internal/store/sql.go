@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -37,6 +38,33 @@ CREATE TABLE IF NOT EXISTS audit_log (
   success BIT(1) NOT NULL, error_message VARCHAR(1000), ` + "`timestamp`" + ` DATETIME(6) NOT NULL
 );`
 
+// columnDefs are the columns each table must have. Hibernate's ddl-auto=update used to add
+// missing ones on every start; an older database (last touched by an earlier version of the app)
+// can lack the newer columns, so Migrate adds whatever is missing. Existing rows are never
+// changed: new columns are nullable, and `verified` defaults to true because every pre-existing
+// row was already publicly visible.
+var columnDefs = map[string][][2]string{
+	"locality": {
+		{"ward", "VARCHAR(255)"}, {"latitude", "DOUBLE"}, {"longitude", "DOUBLE"}, {"notes", "VARCHAR(1000)"},
+		{"source_name", "VARCHAR(500)"}, {"source_url", "VARCHAR(500)"}, {"last_verified", "DATE"},
+		{"verified", "BIT(1) NOT NULL DEFAULT b'1'"}, {"source_url_healthy", "BIT(1)"},
+		{"source_url_last_checked", "DATETIME(6)"}, {"citizen_description", "VARCHAR(1000)"},
+		{"reported_urgency", "VARCHAR(16)"}, {"urgency_score", "INT"}, {"urgency_signals", "VARCHAR(500)"},
+		{"possible_duplicate_of_id", "BIGINT"}, {"duplicate_confidence", "DOUBLE"},
+	},
+}
+
+// MissingColumnStatements returns the ALTER statements needed given the columns that exist.
+func MissingColumnStatements(table string, existing map[string]bool) []string {
+	var out []string
+	for _, c := range columnDefs[table] {
+		if !existing[c[0]] {
+			out = append(out, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, c[0], c[1]))
+		}
+	}
+	return out
+}
+
 func (s *SQL) Migrate(ctx context.Context) error {
 	for _, stmt := range strings.Split(DDL, ";") {
 		if strings.TrimSpace(stmt) == "" {
@@ -44,6 +72,29 @@ func (s *SQL) Migrate(ctx context.Context) error {
 		}
 		if _, err := s.DB.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("migrate: %w", err)
+		}
+	}
+	for table := range columnDefs {
+		rows, err := s.DB.QueryContext(ctx,
+			"SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?", table)
+		if err != nil {
+			return fmt.Errorf("migrate: reading columns of %s: %w", table, err)
+		}
+		existing := map[string]bool{}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			existing[strings.ToLower(name)] = true
+		}
+		rows.Close()
+		for _, stmt := range MissingColumnStatements(table, existing) {
+			slog.InfoContext(ctx, "adding missing column", "sql", stmt)
+			if _, err := s.DB.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("migrate: %s: %w", stmt, err)
+			}
 		}
 	}
 	return nil
