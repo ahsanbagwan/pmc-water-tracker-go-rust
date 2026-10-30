@@ -216,10 +216,38 @@
             <artifactId>rabbitmq</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <version>1.37</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-generator-annprocess</artifactId>
+            <version>1.37</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.2.0</version>
+                <configuration>
+                    <mainClass>org.openjdk.jmh.Main</mainClass>
+                    <classpathScope>test</classpathScope>
+                    <arguments>
+                        <argument>LinkCheckerBenchmark</argument>
+                        <argument>-wi</argument><argument>3</argument> <!-- 3 warmup iterations -->
+                        <argument>-i</argument><argument>5</argument>  <!-- 5 measurement iterations -->
+                        <argument>-f</argument><argument>1</argument>  <!-- 1 fork -->
+                    </arguments>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
